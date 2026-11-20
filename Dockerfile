@@ -1,13 +1,22 @@
 #Nombre: Tomás Olmos Vásquez
 FROM python:3.11-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 
+# Crear usuario sin privilegios (principio de mínimo privilegio)
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 5000
 
-CMD ["python", "app.py"]
+# Ejecutar con Gunicorn en modo producción (sin debug y ocultando versión del servidor)
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
