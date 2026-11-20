@@ -1,4 +1,3 @@
-#Nombre: Tomás Olmos Vásquez#
 pipeline {
     agent any
 
