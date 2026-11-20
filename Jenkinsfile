@@ -2,10 +2,10 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME   = "securedev-flask"
+        IMAGE_NAME    = "securedev-flask"
         CONTAINER_STG = "flask-staging"
         CONTAINER_PRD = "flask-prod"
-        DOCKER_NET   = "devsecops-net"
+        DOCKER_NET    = "devsecops-net"
     }
 
     stages {
@@ -25,33 +25,32 @@ pipeline {
 
                 echo '=== 2.2 Pruebas de Seguridad Automatizadas (OWASP ZAP) ==='
                 sh '''
-                    # Limpiar contenedor temporal previo si existe
-                    docker rm -f ${CONTAINER_STG} || true
+                    docker rm -f ${CONTAINER_STG} zap-scanner || true
 
-                    # Levantar app en entorno de pruebas dentro de la red compartida
-                    docker run -d --name ${CONTAINER_STG} --network ${DOCKER_NET} ${IMAGE_NAME}:${BUILD_NUMBER}
+                    # Levantar app vulnerable expuesta en la red interna (0.0.0.0)
+                    docker run -d --name ${CONTAINER_STG} --network ${DOCKER_NET} \
+                        ${IMAGE_NAME}:${BUILD_NUMBER} flask --app app run --host=0.0.0.0 --port=5000 --debug
                     sleep 4
 
-                    # Preparar carpeta de reportes con permisos de escritura para ZAP
                     mkdir -p zap-reports
-                    chmod 777 zap-reports
 
-                    # Ejecutar OWASP ZAP Baseline Scan apuntando al endpoint /hello?name=test
-                    docker run --rm --network ${DOCKER_NET} \
-                        -v "${WORKSPACE}/zap-reports:/zap/wrk:rw" \
+                    # Ejecutar OWASP ZAP como root y extraer reportes con docker cp
+                    docker run --name zap-scanner --network ${DOCKER_NET} -u root \
                         ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
                         -t http://${CONTAINER_STG}:5000/hello?name=test \
                         -r zap_report.html \
                         -w zap_report.md || true
 
-                    # Detener y eliminar el contenedor de pruebas
-                    docker rm -f ${CONTAINER_STG} || true
+                    docker cp zap-scanner:/zap/wrk/zap_report.html zap-reports/zap_report.html
+                    docker cp zap-scanner:/zap/wrk/zap_report.md zap-reports/zap_report.md
+
+                    docker rm -f ${CONTAINER_STG} zap-scanner || true
                 '''
             }
             post {
                 always {
                     publishHTML(target: [
-                        allowMissing: true,
+                        allowMissing: false,
                         alwaysLinkToLastBuild: true,
                         keepAll: true,
                         reportDir: 'zap-reports',
@@ -67,7 +66,8 @@ pipeline {
                 echo '=== Desplegando contenedor en Producción (puerto 5001) ==='
                 sh '''
                     docker rm -f ${CONTAINER_PRD} || true
-                    docker run -d --name ${CONTAINER_PRD} --network ${DOCKER_NET} -p 5001:5000 --restart unless-stopped ${IMAGE_NAME}:${BUILD_NUMBER}
+                    docker run -d --name ${CONTAINER_PRD} --network ${DOCKER_NET} -p 5001:5000 \
+                        --restart unless-stopped ${IMAGE_NAME}:${BUILD_NUMBER} flask --app app run --host=0.0.0.0 --port=5000 --debug
                 '''
             }
         }
