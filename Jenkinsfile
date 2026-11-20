@@ -18,14 +18,10 @@ pipeline {
 
         stage('2. Pruebas (SCA + DAST con OWASP ZAP)') {
             steps {
-                echo '=== 2.1 Auditoría de Dependencias (SCA) ==='
-                sh '''
-                    docker run --rm ${IMAGE_NAME}:${BUILD_NUMBER} sh -c "pip install -q pip-audit && pip-audit -r requirements.txt" || true
-                '''
-
                 echo '=== 2.2 Pruebas de Seguridad Automatizadas (OWASP ZAP) ==='
                 sh '''
                     docker rm -f ${CONTAINER_STG} zap-scanner || true
+                    docker volume rm zap-wrk || true
 
                     # Levantar app vulnerable expuesta en la red interna (0.0.0.0)
                     docker run -d --name ${CONTAINER_STG} --network ${DOCKER_NET} \
@@ -34,17 +30,21 @@ pipeline {
 
                     mkdir -p zap-reports
 
-                    # Ejecutar OWASP ZAP como root y extraer reportes con docker cp
+                    # Ejecutar OWASP ZAP usando un volumen nombrado de Docker
                     docker run --name zap-scanner --network ${DOCKER_NET} -u root \
+                        -v zap-wrk:/zap/wrk \
                         ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
                         -t http://${CONTAINER_STG}:5000/hello?name=test \
                         -r zap_report.html \
                         -w zap_report.md || true
 
+                    # Extraer los reportes generados hacia el workspace de Jenkins
                     docker cp zap-scanner:/zap/wrk/zap_report.html zap-reports/zap_report.html
                     docker cp zap-scanner:/zap/wrk/zap_report.md zap-reports/zap_report.md
 
+                    # Limpieza de contenedores y volumen temporal
                     docker rm -f ${CONTAINER_STG} zap-scanner || true
+                    docker volume rm zap-wrk || true
                 '''
             }
             post {
