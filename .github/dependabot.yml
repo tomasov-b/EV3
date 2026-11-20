@@ -1,0 +1,22 @@
+#Nombre: Tomás Olmos Vásquez
+#Configuración de Dependabot
+version: 2
+updates:
+  # Monitoreo diario de dependencias Python (requirements.txt)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+
+  # Monitoreo semanal de la imagen base en Dockerfile
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "docker"
+      - "security"
